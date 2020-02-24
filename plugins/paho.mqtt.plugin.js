@@ -55,13 +55,29 @@
             	"default_value": "",
             	"required"    : false
             },
-            {
-            	"name"        : "topic",
-            	"display_name": "Topic",
-            	"type"        : "text",
-            	"description" : "The topic to subscribe to",
-            	"required"    : true
-            },
+			{
+				"name"        : "topics",
+				"display_name": "Topics",
+				"type"        : "array",
+				"description" : "List of topics to subscribe to",
+				"required"    : true,
+				"settings"    : [
+					{
+						"name"        : "topic",
+						"display_name": "Topic",
+						"type"        : "text",
+						"description" : "The topic to subscribe to",
+						"required"    : true
+					},
+					{
+						"name"        : "short_name",
+						"display_name": "Short name",
+						"type"        : "text",
+						"description" : "Short name in the data source context",
+						"required"    : false
+					},
+				]
+			},
             {
             	"name"        : "json_data",
             	"display_name": "JSON messages?",
@@ -83,47 +99,72 @@
 	var mqttDatasourcePlugin = function(settings, updateCallback)
 	{
  		var self = this;
+ 		var client;
 		var data = {};
 
 		var currentSettings = settings;
 
 		function onConnect() {
-			console.log("Connected");
-			client.subscribe(currentSettings.topic);
-		};
+			console.log("Connected to MQTT server");
+
+			_.each(currentSettings.topics, function (t) {
+				client.subscribe(t.topic);
+			});
+		}
 		
 		function onConnectionLost(responseObject) {
 			if (responseObject.errorCode !== 0)
 				console.log("onConnectionLost:"+responseObject.errorMessage);
-		};
+		}
 
 		function onMessageArrived(message) {
-			data.topic = message.destinationName;
-			if (currentSettings.json_data) {
-				data.msg = JSON.parse(message.payloadString);
-			} else {
-				data.msg = message.payloadString;
-			}
-			updateCallback(data);
-		};
+			var newData = {};
+			var topicName;
 
-		// **onSettingsChanged(newSettings)** (required) : A public function we must implement that will be called when a user makes a change to the settings.
+			//console.log("Message" + "(" + message.destinationName + "): " + JSON.stringify(message));
+			newData.topic = message.destinationName;
+			if (currentSettings.json_data) {
+				newData.msg = JSON.parse(message.payloadString);
+			} else {
+				newData.msg = message.payloadString;
+			}
+
+			var topicInfo = _.find(currentSettings.topics, function (t) { return t.topic === newData.topic });
+			if(!topicInfo) {
+				console.log("Error: Unknown topic");
+				return;
+			}
+			topicName = (topicInfo.short_name) ? topicInfo.short_name : topicInfo.topic;
+			data[topicName] = newData;
+
+			updateCallback(data);
+		}
+
 		self.onSettingsChanged = function(newSettings)
 		{
-			client.disconnect();
+			if(client.isConnected()) {
+				client.disconnect();
+			}
 			data = {};
 			currentSettings = newSettings;
 			client.connect({onSuccess:onConnect,
 							userName: currentSettings.username,
 							password: currentSettings.password,
 							useSSL: currentSettings.use_ssl});
-		}
+		};
 
 		// **updateNow()** (required) : A public function we must implement that will be called when the user wants to manually refresh the datasource
 		self.updateNow = function()
 		{
-			// Don't need to do anything here, can't pull an update from MQTT.
-		}
+			if(client.isConnected()) {
+				client.disconnect();
+			}
+			data = {};
+			client.connect({onSuccess:onConnect,
+				userName: currentSettings.username,
+				password: currentSettings.password,
+				useSSL: currentSettings.use_ssl});
+		};
 
 		// **onDispose()** (required) : A public function we must implement that will be called when this instance of this plugin is no longer needed. Do anything you need to cleanup after yourself here.
 		self.onDispose = function()
@@ -132,17 +173,12 @@
 				client.disconnect();
 			}
 			client = {};
-		}
+		};
 
-		var client = new Paho.Client(currentSettings.server,
+		client = new Paho.Client(currentSettings.server,
 										currentSettings.port, 
 										currentSettings.client_id);
 		client.onConnectionLost = onConnectionLost;
 		client.onMessageArrived = onMessageArrived;
-		client.connect({onSuccess:onConnect, 
-						
-						userName: currentSettings.username,
-						password: currentSettings.password,
-						useSSL: currentSettings.use_ssl});
 	}
 }());
