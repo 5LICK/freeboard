@@ -24,14 +24,15 @@
                     { //DOM Ready
                         freeboard.initialize(true);
 
+                        var fileName = "dashboard.json";
                         var hashpattern = window.location.hash.match(/(&|#)source=([^&]+)/);
-                        if (hashpattern !== null) {
-                            $.getJSON(hashpattern[2], function(data) {
-                                freeboard.loadDashboard(data, function() {
-                                    freeboard.setEditing(false);
-                                });
+                        var url = (hashpattern !== null) ? hashpattern[2] : fileName;
+
+                        $.getJSON(url, function(data) {
+                            freeboard.loadDashboard(data, function() {
+                                freeboard.setEditing(false);
                             });
-                        }
+                        });
 
                     });
                 });
